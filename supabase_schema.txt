@@ -1,0 +1,138 @@
+-- ==============================================================================
+-- KARDEX V2 - SCRIPT DE CREACIÓN DE TABLAS EN SUPABASE (POSTGRESQL)
+-- ==============================================================================
+-- Este archivo contiene la sintaxis SQL requerida para replicar la estructura 
+-- de la base de datos (actualmente en SQLite) en Supabase.
+-- Cada que haya una modificación (ej: ALTER TABLE), debe agregarse al final de este archivo.
+-- ==============================================================================
+
+-- Activar extensión de UUID (Comúnmente habilitada por defecto en Supabase)
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ------------------------------------------------------------------------------
+-- 1. Tabla: usuarios_sistema
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS usuarios_sistema (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  nombre TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  documento TEXT UNIQUE,
+  rol TEXT CHECK(rol IN ('admin', 'revisor', 'operario')) NOT NULL,
+  password_hash TEXT NOT NULL,
+  fecha_creacion TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ------------------------------------------------------------------------------
+-- 2. Tabla: rol_permisos
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rol_permisos (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  rol TEXT NOT NULL,
+  pantalla TEXT NOT NULL,
+  puede_ver BOOLEAN DEFAULT TRUE,
+  puede_editar BOOLEAN DEFAULT FALSE,
+  UNIQUE(rol, pantalla)
+);
+
+-- ------------------------------------------------------------------------------
+-- 3. Tabla: trabajadores
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS trabajadores (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  cedula TEXT NOT NULL UNIQUE,
+  nombre TEXT NOT NULL,
+  cargo TEXT NOT NULL
+);
+
+-- ------------------------------------------------------------------------------
+-- 4. Tabla: ubicaciones
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ubicaciones (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  nombre_obra TEXT NOT NULL,
+  responsable_obra_id UUID REFERENCES trabajadores(id) ON DELETE SET NULL,
+  estado TEXT CHECK(estado IN ('Activo', 'Cerrado')) NOT NULL DEFAULT 'Activo'
+);
+
+-- ------------------------------------------------------------------------------
+-- 5. Tabla: lineas_negocio
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS lineas_negocio (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  codigo TEXT NOT NULL UNIQUE,
+  nombre TEXT NOT NULL
+);
+
+-- ------------------------------------------------------------------------------
+-- 6. Tabla: herramientas
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS herramientas (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  nombre TEXT NOT NULL,
+  marca TEXT,
+  descripcion TEXT,
+  codigo_referencia TEXT NOT NULL,
+  num_serial TEXT,
+  fecha_compra DATE,
+  estanteria TEXT,
+  UNIQUE(codigo_referencia, num_serial)
+);
+
+-- ------------------------------------------------------------------------------
+-- 7. Tabla: kardex_movimientos
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kardex_movimientos (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  herramienta_id UUID NOT NULL REFERENCES herramientas(id) ON DELETE CASCADE,
+  trabajador_id UUID REFERENCES trabajadores(id) ON DELETE SET NULL,
+  ubicacion_id UUID REFERENCES ubicaciones(id) ON DELETE SET NULL,
+  linea_negocio_id UUID REFERENCES lineas_negocio(id) ON DELETE SET NULL,
+  tipo_movimiento TEXT CHECK(tipo_movimiento IN ('ENTRADA', 'SALIDA', 'DEVOLUCION', 'MANTENIMIENTO', 'AJUSTE')) NOT NULL,
+  cantidad INTEGER NOT NULL DEFAULT 1,
+  estado_insumo TEXT CHECK(estado_insumo IN ('BUENA', 'MALA')) NOT NULL,
+  observaciones TEXT,
+  fecha TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  usuario_sistema_id UUID NOT NULL REFERENCES usuarios_sistema(id)
+);
+
+-- ==============================================================================
+-- NOTAS SOBRE ROW LEVEL SECURITY (RLS)
+-- Supabase, por defecto, requiere políticas RLS habilitadas para ser consultado 
+-- desde el lado del cliente (ej: la app móvil).
+-- Puedes habilitarlas generalizadas si aún no tienes el flujo de Login conectado:
+-- ==============================================================================
+
+/*
+ALTER TABLE usuarios_sistema ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rol_permisos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trabajadores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ubicaciones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lineas_negocio ENABLE ROW LEVEL SECURITY;
+ALTER TABLE herramientas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE kardex_movimientos ENABLE ROW LEVEL SECURITY;
+
+-- Ejemplo básico (Modo desarrollo: Permitir acceso a todo, se debe cambiar en Prod)
+CREATE POLICY "Permitir todo dev_usuarios" ON usuarios_sistema FOR ALL USING (true);
+CREATE POLICY "Permitir todo dev_rol_perm" ON rol_permisos FOR ALL USING (true);
+CREATE POLICY "Permitir todo dev_trabajadores" ON trabajadores FOR ALL USING (true);
+CREATE POLICY "Permitir todo dev_ubicaciones" ON ubicaciones FOR ALL USING (true);
+CREATE POLICY "Permitir todo dev_lineas_neg" ON lineas_negocio FOR ALL USING (true);
+CREATE POLICY "Permitir todo dev_hrr" ON herramientas FOR ALL USING (true);
+CREATE POLICY "Permitir todo dev_movs" ON kardex_movimientos FOR ALL USING (true);
+*/
+
+-- ==============================================================================
+-- MIGRACIONES Y ALTERACIONES FUTURAS
+-- Agergar cualquier "ALTER TABLE" o "CREATE INDEX" debajo de esta línea.
+-- ==============================================================================
+
+-- Inyección de permisos faltantes para Líneas de Negocio
+INSERT INTO rol_permisos (rol, pantalla, puede_ver, puede_editar) 
+VALUES 
+  ('admin', 'business_lines', true, true),
+  ('revisor', 'business_lines', true, false),
+  ('operario', 'business_lines', true, false)
+ON CONFLICT (rol, pantalla) DO UPDATE 
+SET puede_ver = EXCLUDED.puede_ver, 
+    puede_editar = EXCLUDED.puede_editar;
+

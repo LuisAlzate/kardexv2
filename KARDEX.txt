@@ -1,0 +1,86 @@
+﻿DOCUMENTO DE ESPECIFICACIÓN DEL PRODUCTO: SISTEMA KARDEX DE GESTIÓN DE INVENTARIO
+Versión: 1.0
+Rol: Product Owner
+Objetivo: Unificar la gestión de inventario y trazabilidad de insumos/herramientas de construcción en un ecosistema digital único, eliminando la dependencia de archivos segmentados.
+________________
+
+
+1. VISIÓN DEL PRODUCTO
+Implementar una solución de inventario "Offline-First" desarrollada con React Native. El sistema permitirá gestionar el ciclo de vida de herramientas y materiales (tubos, tornillos, telas, herramientas manuales/eléctricas) garantizando la consistencia de datos entre dispositivos móviles (campo) y la base de datos centralizada (web/oficina).
+2. ARQUITECTURA TÉCNICA
+* Stack: React Native.
+* Entornos:
+   * Producción: Supabase (PostgreSQL) para centralización en la nube.
+   * Pruebas/Offline: SQLite para operación local sin conexión.
+* Sincronización: Modelo de sincronización asíncrona basada en cola de transacciones (Outbox Pattern). El dispositivo móvil actuará como maestro temporal y Supabase como maestro definitivo.
+* Identificación: Uso de UUIDs para todas las transacciones para evitar conflictos durante la sincronización.
+3. MODELO DE DATOS (ESQUEMA MAESTRO)
+La información debe estar interconectada. No se permite redundancia.
+1. Tabla usuarios_sistema: (Admin, Revisor, Operario).
+2. Tabla trabajadores: Datos de personal (cédula, nombre, cargo).
+3. Tabla ubicaciones: Registro de proyectos u obras (ej. "EL JORDAN").
+4. Tabla herramientas: Catálogo único con código interno (ej. CF1, CF2).
+5. Tabla kardex_movimientos: Registro de cada operación (id_herramienta, id_trabajador, id_ubicacion, tipo_movimiento, fecha, usuario_registro).
+4. REGLAS DE ORO DEL KARDEX
+1. Cálculo de Stock: Nunca guardar la cantidad física en una columna estática. El stock actual se calculará siempre mediante la fórmula: Stock = Σ Ingresos - Σ Egresos.
+2. Flujos de Movimiento:
+   * Ingresos: Destino automático a "BODEGA".
+   * Egresos: Obligatorio especificar la obra o trabajador de destino.
+   * Ajustes: Solo permitidos por Administradores para corregir inventario físico.
+3. Reportes: El sistema deberá generar reportes dinámicos (Semanal, Mensual, Trimestral, Anual) mediante selectores de fecha, exportables a formato CSV/PDF para auditoría.
+5. GESTIÓN DE ESTADOS Y CICLO DE VIDA
+Para garantizar la calidad de la herramienta en campo, se establece:
+* ACTIVO: Disponible para asignación.
+* EN OBSERVACIÓN: Herramienta reportada con falla. Bloqueada para asignación hasta que pase por el Administrador.
+* NO ACTIVO (Baja): Pérdida o daño irreparable. Sale del inventario. Requiere justificación obligatoria.
+6. PROTOCOLO OFFLINE (CONECTIVIDAD)
+1. Autonomía: El operario puede realizar movimientos sin internet. Los registros se almacenan en SQLite.
+2. Integridad Temporal: El sistema registrará la "Fecha Real del Movimiento" (cuando el operario hizo la acción) y no la "Fecha de Sincronización". Esto mantiene la integridad de los reportes.
+3. Feedback Visual:
+   * Nube Verde: Sincronizado.
+   * Nube Roja/Pendiente: Registros esperando subida. El sistema debe solicitar la sincronización al detectar conexión.
+7. MATRIZ DE ROLES Y ACCESOS
+Rol
+	Funciones
+	Operario
+	Registro de entradas, salidas y reportes de falla.
+	Revisor
+	Auditoría, visualización de existencias e historial.
+	Administrador
+	Alta de productos, ajuste de inventario, gestión de usuarios, generación de reportes anuales.
+	________________
+
+
+Notas del Product Owner:
+Este documento es la fuente de verdad. Todo desarrollo futuro debe validar que el código no contradiga estas reglas de negocio. La prioridad actual es la migración y normalización de los archivos CSV históricos al esquema relacional definido en la sección 3.
+
+
+
+
+8. Estructura de datos.
+
+
+1. Tabla: usuarios_sistema
+* Propósito: Controlar quién entra al aplicativo (Admin, Revisor, Operario).
+* Campos: id (PK, uuid), nombre, email, rol (ENUM: 'admin', 'revisor', 'operario'), password_hash.
+2. Tabla: trabajadores (Personal)
+* Propósito: Listado de las personas a las que les entregas herramientas (fichas que antes tenías en archivos separados).
+* Campos: id (PK), cedula (Unique), nombre, cargo.
+3. Tabla: ubicaciones (Proyectos)
+* Propósito: Centralizar las obras o sitios de trabajo (ej. "EL JORDAN").
+* Campos: id (PK), nombre_obra, responsable_obra_id (FK a trabajadores), estado (Activo/Cerrado).
+4. Tabla: herramientas (Catálogo Maestro)
+* Propósito: Definir el tipo de objeto (es el "qué").
+* Campos: id (PK), nombre, marca, descripcion, codigo_referencia (Aquí irán tus CF1, CF2, etc.).
+5. Tabla: kardex_movimientos (La tabla más importante)
+* Propósito: Registrar cada vez que algo cambia de manos.
+* Campos:
+   * id (PK)
+   * herramienta_id (FK -> herramientas)
+   * trabajador_id (FK -> trabajadores)
+   * ubicacion_id (FK -> ubicaciones)
+   * tipo_movimiento (ENTRADA, SALIDA, DEVOLUCION, MANTENIMIENTO)
+   * estado_insumo (BUENA, MALA)
+   * observaciones
+   * fecha
+   * usuario_sistema_id (Quién registró el movimiento, FK -> usuarios_sistema)

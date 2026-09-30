@@ -1,0 +1,61 @@
+{
+  "name": "kardexv2",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "electron": "electron electron-main.js",
+    "desktop": "npx.cmd expo export --platform web && node fix-web-paths.js && electron electron-main.js",
+    "build:desktop": "npx.cmd expo export --platform web && node fix-web-paths.js && electron-builder"
+  },
+  "dependencies": {
+    "@expo/metro-config": "~55.0.9",
+    "@expo/metro-runtime": "~55.0.6",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/datetimepicker": "^8.6.0",
+    "@supabase/supabase-js": "^2.99.3",
+    "electron-serve": "^3.0.1",
+    "expo": "~55.0.5",
+    "expo-constants": "^55.0.7",
+    "expo-document-picker": "~55.0.9",
+    "expo-file-system": "~55.0.11",
+    "expo-linking": "^55.0.7",
+    "expo-print": "~55.0.8",
+    "expo-router": "^55.0.4",
+    "expo-sharing": "~55.0.11",
+    "expo-sqlite": "^55.0.10",
+    "expo-status-bar": "~55.0.4",
+    "lucide-react-native": "^0.577.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-native": "0.83.2",
+    "react-native-safe-area-context": "^5.7.0",
+    "react-native-screens": "^4.24.0",
+    "react-native-url-polyfill": "^3.0.0",
+    "react-native-web": "^0.21.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "electron": "^41.0.3",
+    "electron-builder": "^26.8.1",
+    "electron-is-dev": "^3.0.1",
+    "typescript": "~5.9.2"
+  },
+  "private": true,
+  "build": {
+    "appId": "com.kardexv2.app",
+    "files": [
+      "dist/**/*",
+      "electron-main.js",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "assets/icon.png"
+    }
+  }
+}
