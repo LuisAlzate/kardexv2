@@ -102,7 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const p = permissions.find(x => x.pantalla === pantalla);
         if (!p) {
-            if (pantalla === 'business_lines' && accion === 'ver') return true;
+            if ((pantalla === 'business_lines' || pantalla === 'categories' || pantalla === 'reports') && accion === 'ver') return true;
             return false;
         }
         return accion === 'ver' ? p.puede_ver : p.puede_editar;

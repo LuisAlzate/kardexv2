@@ -56,11 +56,16 @@ const InventoryMaintenanceScreen: React.FC<InventoryMaintenanceScreenProps> = ({
 
             if (activeTab === 'send') {
                 const data = await repo.getToolsWithStock();
-                // Filter tools that have any stock (bueno or malo)
-                setAvailableTools(data.filter(t => t.stock_total > 0));
+                // Mantenimiento aplica solo a HERRAMIENTAS con stock disponible
+                setAvailableTools(
+                    data.filter(t => t.stock_total > 0 && (t.categoria_codigo === 'HERRAMIENTAS' || !t.categoria_codigo))
+                );
             } else {
                 const data = await repo.getToolsInMaintenance();
-                setToolsInMaintenance(data);
+                // Solo herramientas en mantenimiento
+                setToolsInMaintenance(
+                    data.filter(t => t.tool_categoria_codigo === 'HERRAMIENTAS' || !t.tool_categoria_codigo)
+                );
             }
         } catch (error) {
             console.error(error);

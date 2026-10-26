@@ -92,7 +92,12 @@ const InventoryReturnScreen: React.FC<InventoryReturnScreenProps> = ({ onBack })
         setSearching(true);
         try {
             const repo = await getMovementRepository(isOnline);
-            const results = await repo.getAssignedToolsByFilter(selectedCollaboratorId, selectedLocationId);
+            // Solo mostramos artículos de categoría HERRAMIENTAS en este módulo
+            const results = await repo.getAssignedToolsByFilter(
+                selectedCollaboratorId,
+                selectedLocationId,
+                'tools'
+            );
             setAssignedTools(results);
         } catch (error) {
             console.error(error);

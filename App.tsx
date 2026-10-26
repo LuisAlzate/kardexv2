@@ -11,9 +11,12 @@ import CollaboratorScreen from './src/screens/CollaboratorScreen';
 import LocationScreen from './src/screens/LocationScreen';
 import UserManagementScreen from './src/screens/UserManagementScreen';
 import InventoryReturnScreen from './src/screens/InventoryReturnScreen';
+import SupplyReturnScreen from './src/screens/SupplyReturnScreen';
 import InventoryMaintenanceScreen from './src/screens/InventoryMaintenanceScreen';
 import ToolLifeCycleScreen from './src/screens/ToolLifeCycleScreen';
 import BusinessLineScreen from './src/screens/BusinessLineScreen';
+import CategoryScreen from './src/screens/CategoryScreen';
+import ReportsScreen from './src/screens/ReportsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { Colors } from './src/theme/colors';
 import { StatusBar } from 'expo-status-bar';
@@ -78,8 +81,16 @@ const Navigation = () => {
     return <BusinessLineScreen onBack={() => setCurrentScreen('dashboard')} />;
   }
 
+  if (currentScreen === 'categories') {
+    return <CategoryScreen onBack={() => setCurrentScreen('dashboard')} />;
+  }
+
   if (currentScreen === 'inventory_return') {
     return <InventoryReturnScreen onBack={() => setCurrentScreen('dashboard')} />;
+  }
+
+  if (currentScreen === 'supply_return') {
+    return <SupplyReturnScreen onBack={() => setCurrentScreen('dashboard')} />;
   }
 
   if (currentScreen === 'maintenance') {
@@ -92,6 +103,10 @@ const Navigation = () => {
 
   if (currentScreen === 'settings') {
     return <SettingsScreen onBack={() => setCurrentScreen('dashboard')} />;
+  }
+
+  if (currentScreen === 'reports') {
+    return <ReportsScreen onBack={() => setCurrentScreen('dashboard')} />;
   }
 
   if (currentScreen === 'user_management' && user?.rol === 'admin') {

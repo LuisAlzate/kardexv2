@@ -1,6 +1,13 @@
 import * as SQLite from 'expo-sqlite';
 import { supabase } from '../../lib/supabase';
 
+export interface Category {
+  id: string;
+  codigo: string;
+  nombre: string;
+  descripcion?: string;
+}
+
 export interface Tool {
   id: string;
   nombre: string;
@@ -10,6 +17,10 @@ export interface Tool {
   num_serial?: string;
   fecha_compra?: string;
   estanteria?: string;
+  categoria_id?: string;
+  categoria_nombre?: string;
+  categoria_codigo?: string;
+  precio?: number;
 }
 
 export interface ToolWithStock extends Tool {
@@ -55,6 +66,8 @@ export interface MovementListItem extends Movement {
   tool_nombre: string;
   tool_codigo: string;
   tool_serial?: string;
+  tool_marca?: string; // Marca de la herramienta/insumo
+  tool_categoria_codigo?: string; // Código de categoría (HERRAMIENTAS, INSUMOS, EQUIPOS, etc.)
   collaborator_nombre?: string;
   location_nombre?: string;
   business_line_nombre?: string;
@@ -70,7 +83,11 @@ export interface IMovementRepository {
   getToolByCode(code: string): Promise<Tool | null>;
   getToolByCodeAndSerial(code: string, serial: string | null): Promise<Tool | null>;
   getAssignedToolsByCode(code: string): Promise<MovementListItem[]>;
-  getAssignedToolsByFilter(collaboratorId?: string, locationId?: string): Promise<MovementListItem[]>;
+  /**
+   * Obtiene artículos asignados (con balance > 0) filtrados por colaborador/ubicación.
+   * @param categoryType 'tools' = solo HERRAMIENTAS | 'supplies' = todo excepto HERRAMIENTAS | 'all' = sin restricción
+   */
+  getAssignedToolsByFilter(collaboratorId?: string, locationId?: string, categoryType?: 'tools' | 'supplies' | 'all'): Promise<MovementListItem[]>;
 
   // Movements
   registerMovement(movement: Movement): Promise<void>;
@@ -91,6 +108,12 @@ export interface IMovementRepository {
   createBusinessLine(bl: BusinessLine): Promise<void>;
   getAllBusinessLines(): Promise<BusinessLine[]>;
 
+  // Categories (Maestro de Categorías: Herramientas, Insumos, Equipos, etc.)
+  createCategory(c: Category): Promise<void>;
+  getAllCategories(): Promise<Category[]>;
+  updateCategory(c: Category): Promise<void>;
+  deleteCategory(id: string): Promise<void>;
+
   // Dashboard Stats
   getDashboardStats(): Promise<{ dailyMovements: number; activeLoans: number }>;
 
@@ -104,19 +127,46 @@ export class SQLiteMovementRepository implements IMovementRepository {
   // Tools
   async createTool(tool: Tool): Promise<void> {
     await this.db.runAsync(
-      'INSERT INTO herramientas (id, nombre, marca, descripcion, codigo_referencia, num_serial, fecha_compra, estanteria) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [tool.id, tool.nombre, tool.marca || null, tool.descripcion || null, tool.codigo_referencia, tool.num_serial || null, tool.fecha_compra || null, tool.estanteria || null]
+      'INSERT INTO herramientas (id, nombre, marca, descripcion, codigo_referencia, num_serial, fecha_compra, estanteria, categoria_id, precio) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        tool.id,
+        tool.nombre,
+        tool.marca || null,
+        tool.descripcion || null,
+        tool.codigo_referencia,
+        tool.num_serial || null,
+        tool.fecha_compra || null,
+        tool.estanteria || null,
+        tool.categoria_id || null,
+        tool.precio ?? 0
+      ]
     );
   }
 
   async getAllTools(): Promise<Tool[]> {
-    return await this.db.getAllAsync<Tool>('SELECT * FROM herramientas ORDER BY nombre ASC');
+    return await this.db.getAllAsync<Tool>(`
+      SELECT h.*, c.nombre as categoria_nombre, c.codigo as categoria_codigo
+      FROM herramientas h
+      LEFT JOIN categorias c ON h.categoria_id = c.id
+      ORDER BY h.nombre ASC
+    `);
   }
 
   async updateTool(tool: Tool): Promise<void> {
     await this.db.runAsync(
-      'UPDATE herramientas SET nombre = ?, marca = ?, descripcion = ?, codigo_referencia = ?, num_serial = ?, fecha_compra = ?, estanteria = ? WHERE id = ?',
-      [tool.nombre, tool.marca || null, tool.descripcion || null, tool.codigo_referencia, tool.num_serial || null, tool.fecha_compra || null, tool.estanteria || null, tool.id]
+      'UPDATE herramientas SET nombre = ?, marca = ?, descripcion = ?, codigo_referencia = ?, num_serial = ?, fecha_compra = ?, estanteria = ?, categoria_id = ?, precio = ? WHERE id = ?',
+      [
+        tool.nombre,
+        tool.marca || null,
+        tool.descripcion || null,
+        tool.codigo_referencia,
+        tool.num_serial || null,
+        tool.fecha_compra || null,
+        tool.estanteria || null,
+        tool.categoria_id || null,
+        tool.precio ?? 0,
+        tool.id
+      ]
     );
   }
 
@@ -124,11 +174,14 @@ export class SQLiteMovementRepository implements IMovementRepository {
     const query = `
       SELECT 
         h.*,
+        c.nombre as categoria_nombre,
+        c.codigo as categoria_codigo,
         COALESCE(SUM(CASE WHEN km.tipo_movimiento IN ('ENTRADA', 'DEVOLUCION', 'AJUSTE') AND COALESCE(km.estado_insumo, 'BUENA') = 'BUENA' THEN km.cantidad ELSE 0 END), 0) -
         COALESCE(SUM(CASE WHEN km.tipo_movimiento IN ('SALIDA', 'MANTENIMIENTO') AND COALESCE(km.estado_insumo, 'BUENA') = 'BUENA' THEN km.cantidad ELSE 0 END), 0) as stock_bueno,
         COALESCE(SUM(CASE WHEN km.tipo_movimiento IN ('ENTRADA', 'DEVOLUCION', 'AJUSTE') AND km.estado_insumo = 'MALA' THEN km.cantidad ELSE 0 END), 0) -
         COALESCE(SUM(CASE WHEN km.tipo_movimiento IN ('SALIDA', 'MANTENIMIENTO') AND km.estado_insumo = 'MALA' THEN km.cantidad ELSE 0 END), 0) as stock_malo
       FROM herramientas h
+      LEFT JOIN categorias c ON h.categoria_id = c.id
       LEFT JOIN kardex_movimientos km ON h.id = km.herramienta_id
       GROUP BY h.id
       ORDER BY h.nombre ASC
@@ -136,6 +189,7 @@ export class SQLiteMovementRepository implements IMovementRepository {
     const results = await this.db.getAllAsync<any>(query);
     return results.map(r => ({
       ...r,
+      precio: Number(r.precio || 0),
       stock_bueno: Number(r.stock_bueno),
       stock_malo: Number(r.stock_malo),
       stock_total: Number(r.stock_bueno) + Number(r.stock_malo)
@@ -150,11 +204,13 @@ export class SQLiteMovementRepository implements IMovementRepository {
         h.nombre as tool_nombre,
         h.codigo_referencia as tool_codigo,
         h.num_serial as tool_serial,
+        c.codigo as tool_categoria_codigo,
         CAST(SUM(km.cantidad) AS INTEGER) as balance,
         MAX(km.fecha) as fecha,
         MAX(km.observaciones) as observaciones
       FROM kardex_movimientos km
       JOIN herramientas h ON km.herramienta_id = h.id
+      LEFT JOIN categorias c ON h.categoria_id = c.id
       WHERE km.tipo_movimiento = 'MANTENIMIENTO'
       GROUP BY km.herramienta_id
       HAVING balance > 0
@@ -166,7 +222,10 @@ export class SQLiteMovementRepository implements IMovementRepository {
   async getToolByCode(code: string): Promise<Tool | null> {
     // Look for tool with this code and NO serial (grouped version)
     return await this.db.getFirstAsync<Tool>(
-      'SELECT * FROM herramientas WHERE codigo_referencia = ? AND (num_serial IS NULL OR num_serial = "")',
+      `SELECT h.*, c.nombre as categoria_nombre, c.codigo as categoria_codigo
+       FROM herramientas h
+       LEFT JOIN categorias c ON h.categoria_id = c.id
+       WHERE h.codigo_referencia = ? AND (h.num_serial IS NULL OR h.num_serial = "")`,
       [code]
     );
   }
@@ -174,7 +233,10 @@ export class SQLiteMovementRepository implements IMovementRepository {
   async getToolByCodeAndSerial(code: string, serial: string | null): Promise<Tool | null> {
     if (!serial) return this.getToolByCode(code);
     return await this.db.getFirstAsync<Tool>(
-      'SELECT * FROM herramientas WHERE codigo_referencia = ? AND num_serial = ?',
+      `SELECT h.*, c.nombre as categoria_nombre, c.codigo as categoria_codigo
+       FROM herramientas h
+       LEFT JOIN categorias c ON h.categoria_id = c.id
+       WHERE h.codigo_referencia = ? AND h.num_serial = ?`,
       [code, serial]
     );
   }
@@ -224,6 +286,7 @@ export class SQLiteMovementRepository implements IMovementRepository {
         h.nombre as tool_nombre,
         h.codigo_referencia as tool_codigo,
         h.num_serial as tool_serial,
+        h.marca as tool_marca,
         t.nombre as collaborator_nombre,
         u.nombre_obra as location_nombre,
         ln.nombre as business_line_nombre
@@ -289,6 +352,7 @@ export class SQLiteMovementRepository implements IMovementRepository {
         h.nombre as tool_nombre,
         h.codigo_referencia as tool_codigo,
         h.num_serial as tool_serial,
+        h.marca as tool_marca,
         t.nombre as collaborator_nombre,
         u.nombre_obra as location_nombre,
         CAST(SUM(CASE WHEN km.tipo_movimiento = 'SALIDA' THEN km.cantidad ELSE 0 END) -
@@ -306,7 +370,11 @@ export class SQLiteMovementRepository implements IMovementRepository {
     return await this.db.getAllAsync<MovementListItem>(query, [code]);
   }
 
-  async getAssignedToolsByFilter(collaboratorId?: string, locationId?: string): Promise<MovementListItem[]> {
+  async getAssignedToolsByFilter(
+    collaboratorId?: string,
+    locationId?: string,
+    categoryType: 'tools' | 'supplies' | 'all' = 'all'
+  ): Promise<MovementListItem[]> {
     if (!collaboratorId && !locationId) return [];
 
     let filterClause = '';
@@ -322,6 +390,13 @@ export class SQLiteMovementRepository implements IMovementRepository {
       params.push(locationId);
     }
 
+    // Filtro por tipo de categoría: HERRAMIENTAS vs el resto (Insumos, Equipos, etc.)
+    if (categoryType === 'tools') {
+      filterClause += " AND c.codigo = 'HERRAMIENTAS'";
+    } else if (categoryType === 'supplies') {
+      filterClause += " AND (c.codigo IS NULL OR c.codigo != 'HERRAMIENTAS')";
+    }
+
     const query = `
       SELECT 
         (km.herramienta_id || '_' || COALESCE(km.trabajador_id, 'NULL') || '_' || COALESCE(km.ubicacion_id, 'NULL')) as id,
@@ -331,6 +406,8 @@ export class SQLiteMovementRepository implements IMovementRepository {
         h.nombre as tool_nombre,
         h.codigo_referencia as tool_codigo,
         h.num_serial as tool_serial,
+        h.marca as tool_marca,
+        c.codigo as tool_categoria_codigo,
         t.nombre as collaborator_nombre,
         u.nombre_obra as location_nombre,
         CAST(SUM(CASE WHEN km.tipo_movimiento = 'SALIDA' THEN km.cantidad ELSE 0 END) -
@@ -338,6 +415,7 @@ export class SQLiteMovementRepository implements IMovementRepository {
         MAX(km.fecha) as fecha
       FROM kardex_movimientos km
       JOIN herramientas h ON km.herramienta_id = h.id
+      LEFT JOIN categorias c ON h.categoria_id = c.id
       LEFT JOIN trabajadores t ON km.trabajador_id = t.id
       LEFT JOIN ubicaciones u ON km.ubicacion_id = u.id
       WHERE 1=1 ${filterClause}
@@ -384,6 +462,36 @@ export class SQLiteMovementRepository implements IMovementRepository {
     return await this.db.getAllAsync<BusinessLine>('SELECT * FROM lineas_negocio ORDER BY nombre ASC');
   }
 
+  // Categories (Maestro)
+  async createCategory(c: Category): Promise<void> {
+    await this.db.runAsync(
+      'INSERT INTO categorias (id, codigo, nombre, descripcion) VALUES (?, ?, ?, ?)',
+      [c.id, c.codigo, c.nombre, c.descripcion || null]
+    );
+  }
+
+  async getAllCategories(): Promise<Category[]> {
+    return await this.db.getAllAsync<Category>('SELECT * FROM categorias ORDER BY nombre ASC');
+  }
+
+  async updateCategory(c: Category): Promise<void> {
+    await this.db.runAsync(
+      'UPDATE categorias SET codigo = ?, nombre = ?, descripcion = ? WHERE id = ?',
+      [c.codigo, c.nombre, c.descripcion || null, c.id]
+    );
+  }
+
+  async deleteCategory(id: string): Promise<void> {
+    const countResult = await this.db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM herramientas WHERE categoria_id = ?',
+      [id]
+    );
+    if (countResult && countResult.count > 0) {
+      throw new Error(`No se puede eliminar la categoría porque tiene ${countResult.count} artículo(s) asociado(s).`);
+    }
+    await this.db.runAsync('DELETE FROM categorias WHERE id = ?', [id]);
+  }
+
   // Dashboard Stats
   async getDashboardStats(): Promise<{ dailyMovements: number; activeLoans: number }> {
     const dailyQuery = `SELECT COUNT(*) as count FROM kardex_movimientos WHERE date(fecha) = date('now', 'localtime')`;
@@ -417,6 +525,7 @@ export class SQLiteMovementRepository implements IMovementRepository {
         h.nombre as tool_nombre,
         h.codigo_referencia as tool_codigo,
         h.num_serial as tool_serial,
+        h.marca as tool_marca,
         t.nombre as collaborator_nombre,
         u.nombre_obra as location_nombre,
         ln.nombre as business_line_nombre
@@ -442,15 +551,21 @@ export class SupabaseMovementRepository implements IMovementRepository {
       codigo_referencia: tool.codigo_referencia,
       num_serial: tool.num_serial || null,
       fecha_compra: tool.fecha_compra || null,
-      estanteria: tool.estanteria || null
+      estanteria: tool.estanteria || null,
+      categoria_id: tool.categoria_id || null,
+      precio: tool.precio ?? 0
     }]);
     if (error) throw error;
   }
 
   async getAllTools(): Promise<Tool[]> {
-    const { data, error } = await supabase.from('herramientas').select('*').order('nombre', { ascending: true });
+    const { data, error } = await supabase.from('herramientas').select('*, categorias(nombre, codigo)').order('nombre', { ascending: true });
     if (error) throw error;
-    return data;
+    return (data || []).map((t: any) => ({
+      ...t,
+      categoria_nombre: t.categorias?.nombre,
+      categoria_codigo: t.categorias?.codigo
+    }));
   }
 
   async updateTool(tool: Tool): Promise<void> {
@@ -461,7 +576,9 @@ export class SupabaseMovementRepository implements IMovementRepository {
       codigo_referencia: tool.codigo_referencia,
       num_serial: tool.num_serial || null,
       fecha_compra: tool.fecha_compra || null,
-      estanteria: tool.estanteria || null
+      estanteria: tool.estanteria || null,
+      categoria_id: tool.categoria_id || null,
+      precio: tool.precio ?? 0
     }).eq('id', tool.id);
     if (error) throw error;
   }
@@ -471,6 +588,7 @@ export class SupabaseMovementRepository implements IMovementRepository {
     if (error) throw error;
     return data.map((r: any) => ({
       ...r,
+      precio: Number(r.precio || 0),
       stock_bueno: Number(r.stock_bueno),
       stock_malo: Number(r.stock_malo),
       stock_total: Number(r.stock_total)
@@ -486,26 +604,36 @@ export class SupabaseMovementRepository implements IMovementRepository {
   async getToolByCode(code: string): Promise<Tool | null> {
     const { data, error } = await supabase
       .from('herramientas')
-      .select('*')
+      .select('*, categorias(nombre, codigo)')
       .eq('codigo_referencia', code)
       .is('num_serial', null)
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    return data;
+    if (!data) return null;
+    return {
+      ...data,
+      categoria_nombre: data.categorias?.nombre,
+      categoria_codigo: data.categorias?.codigo
+    };
   }
 
   async getToolByCodeAndSerial(code: string, serial: string | null): Promise<Tool | null> {
     if (!serial) return this.getToolByCode(code);
     const { data, error } = await supabase
       .from('herramientas')
-      .select('*')
+      .select('*, categorias(nombre, codigo)')
       .eq('codigo_referencia', code)
       .eq('num_serial', serial)
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    return data;
+    if (!data) return null;
+    return {
+      ...data,
+      categoria_nombre: data.categorias?.nombre,
+      categoria_codigo: data.categorias?.codigo
+    };
   }
 
   async registerMovement(m: Movement): Promise<void> {
@@ -560,7 +688,7 @@ export class SupabaseMovementRepository implements IMovementRepository {
   }
 
   async getMovements(limit: number, offset: number, type?: string, startDate?: string, endDate?: string, collaboratorId?: string, locationId?: string, toolCode?: string, toolSerial?: string, businessLineId?: string): Promise<MovementListItem[]> {
-    let query = supabase.from('kardex_movimientos').select('*, herramientas!inner(nombre, codigo_referencia, num_serial), trabajadores(nombre), ubicaciones(nombre_obra), lineas_negocio(nombre)');
+    let query = supabase.from('kardex_movimientos').select('*, herramientas!inner(nombre, marca, codigo_referencia, num_serial), trabajadores(nombre), ubicaciones(nombre_obra), lineas_negocio(nombre)');
     
     if (type) query = query.eq('tipo_movimiento', type);
     if (startDate) query = query.gte('fecha', startDate);
@@ -580,6 +708,7 @@ export class SupabaseMovementRepository implements IMovementRepository {
       tool_nombre: r.herramientas?.nombre,
       tool_codigo: r.herramientas?.codigo_referencia,
       tool_serial: r.herramientas?.num_serial,
+      tool_marca: r.herramientas?.marca,
       collaborator_nombre: r.trabajadores?.nombre,
       location_nombre: r.ubicaciones?.nombre_obra,
       business_line_nombre: r.lineas_negocio?.nombre
@@ -592,12 +721,21 @@ export class SupabaseMovementRepository implements IMovementRepository {
     return data;
   }
 
-  async getAssignedToolsByFilter(collaboratorId?: string, locationId?: string): Promise<MovementListItem[]> {
+  async getAssignedToolsByFilter(
+    collaboratorId?: string,
+    locationId?: string,
+    categoryType: 'tools' | 'supplies' | 'all' = 'all'
+  ): Promise<MovementListItem[]> {
     if (!collaboratorId && !locationId) return [];
     let query = supabase.from('view_assigned_tools').select('*');
     if (collaboratorId) query = query.eq('trabajador_id', collaboratorId);
     if (locationId) query = query.eq('ubicacion_id', locationId);
-    
+    // Filtro de categoría: la vista debe exponer tool_categoria_codigo
+    if (categoryType === 'tools') {
+      query = (query as any).eq('tool_categoria_codigo', 'HERRAMIENTAS');
+    } else if (categoryType === 'supplies') {
+      query = (query as any).neq('tool_categoria_codigo', 'HERRAMIENTAS');
+    }
     const { data, error } = await query.order('fecha', { ascending: false });
     if (error) throw error;
     return data;
@@ -636,6 +774,45 @@ export class SupabaseMovementRepository implements IMovementRepository {
     return data;
   }
 
+  // Categories (Maestro en Supabase)
+  async createCategory(c: Category): Promise<void> {
+    const { error } = await supabase.from('categorias').insert([{
+      id: c.id,
+      codigo: c.codigo,
+      nombre: c.nombre,
+      descripcion: c.descripcion || null
+    }]);
+    if (error) throw error;
+  }
+
+  async getAllCategories(): Promise<Category[]> {
+    const { data, error } = await supabase.from('categorias').select('*').order('nombre', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async updateCategory(c: Category): Promise<void> {
+    const { error } = await supabase.from('categorias').update({
+      codigo: c.codigo,
+      nombre: c.nombre,
+      descripcion: c.descripcion || null
+    }).eq('id', c.id);
+    if (error) throw error;
+  }
+
+  async deleteCategory(id: string): Promise<void> {
+    const { count, error: countErr } = await supabase
+      .from('herramientas')
+      .select('id', { count: 'exact', head: true })
+      .eq('categoria_id', id);
+
+    if (!countErr && count && count > 0) {
+      throw new Error(`No se puede eliminar la categoría porque tiene ${count} artículo(s) asociado(s).`);
+    }
+    const { error } = await supabase.from('categorias').delete().eq('id', id);
+    if (error) throw error;
+  }
+
   async getDashboardStats(): Promise<{ dailyMovements: number; activeLoans: number }> {
     const { data, error } = await supabase.rpc('get_dashboard_stats');
     if (error) throw error;
@@ -648,7 +825,7 @@ export class SupabaseMovementRepository implements IMovementRepository {
   async getToolLifeCycle(toolId: string): Promise<MovementListItem[]> {
     const { data, error } = await supabase
       .from('kardex_movimientos')
-      .select('*, herramientas!inner(nombre, codigo_referencia, num_serial), trabajadores(nombre), ubicaciones(nombre_obra), lineas_negocio(nombre)')
+      .select('*, herramientas!inner(nombre, marca, codigo_referencia, num_serial), trabajadores(nombre), ubicaciones(nombre_obra), lineas_negocio(nombre)')
       .eq('herramienta_id', toolId)
       .order('fecha', { ascending: false });
     if (error) throw error;
@@ -658,6 +835,7 @@ export class SupabaseMovementRepository implements IMovementRepository {
       tool_nombre: r.herramientas?.nombre,
       tool_codigo: r.herramientas?.codigo_referencia,
       tool_serial: r.herramientas?.num_serial,
+      tool_marca: r.herramientas?.marca,
       collaborator_nombre: r.trabajadores?.nombre,
       location_nombre: r.ubicaciones?.nombre_obra,
       business_line_nombre: r.lineas_negocio?.nombre

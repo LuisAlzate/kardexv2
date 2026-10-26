@@ -43,6 +43,7 @@ interface GroupedMovement {
         tool_nombre: string;
         tool_codigo: string;
         tool_serial?: string;
+        tool_marca?: string;
         cantidad: number;
         estado_insumo?: string;
     }[];
@@ -138,6 +139,7 @@ const MovementHistoryScreen: React.FC<MovementHistoryScreenProps> = ({ onBack })
                 tool_nombre: item.tool_nombre,
                 tool_codigo: item.tool_codigo,
                 tool_serial: item.tool_serial,
+                tool_marca: item.tool_marca,
                 cantidad: item.cantidad,
                 estado_insumo: item.estado_insumo
             });
@@ -187,6 +189,7 @@ const MovementHistoryScreen: React.FC<MovementHistoryScreenProps> = ({ onBack })
                             tool_nombre: i.tool_nombre,
                             tool_codigo: i.tool_codigo,
                             tool_serial: i.tool_serial,
+                            tool_marca: i.tool_marca,
                             cantidad: i.cantidad,
                             estado_insumo: i.estado_insumo,
                             // Re-construct observations with code if it was an exit code group
@@ -296,7 +299,7 @@ const MovementHistoryScreen: React.FC<MovementHistoryScreenProps> = ({ onBack })
                             <img src="${LOGO_BASE64}" style="width: 140px; height: 75px; object-fit: contain; display: block; margin: 0 auto;" />
                         </td>
                         <td rowspan="3" style="width: 45%; border: 1px solid #000; font-weight: bold; font-size: 16px; vertical-align: middle;">
-                            FORMATO MOVIMIENTO DE HERRAMIENTAS
+                            FORMATO MOVIMIENTO DE HERRAMIENTAS E INSUMOS
                         </td>
                         <td style="width: 30%; border: 1px solid #000; text-align: left; padding: 5px; font-size: 11px;">
                             <strong>Código:</strong> COM-F-04
@@ -345,12 +348,13 @@ const MovementHistoryScreen: React.FC<MovementHistoryScreenProps> = ({ onBack })
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 20px; border: 1px solid #000;">
                     <thead>
                         <tr style="background-color: #f4f4f4;">
-                            <th style="padding: 8px; border: 1px solid #000; width: 8%;">CANT.</th>
-                            <th style="padding: 8px; border: 1px solid #000; width: 30%;">DESCRIPCIÓN DE HERRAMIENTA</th>
-                            <th style="padding: 8px; border: 1px solid #000; width: 12%;">CÓDIGO</th>
-                            <th style="padding: 8px; border: 1px solid #000; width: 15%;">SERIAL</th>
+                            <th style="padding: 8px; border: 1px solid #000; width: 7%;">CANT.</th>
+                            <th style="padding: 8px; border: 1px solid #000; width: 28%;">DESCRIPCIÓN DE HERRAMIENTA / INSUMO</th>
+                            <th style="padding: 8px; border: 1px solid #000; width: 14%;">MARCA</th>
+                            <th style="padding: 8px; border: 1px solid #000; width: 13%;">CÓDIGO</th>
+                            <th style="padding: 8px; border: 1px solid #000; width: 13%;">SERIAL</th>
                             <th style="padding: 8px; border: 1px solid #000; width: 10%;">ESTADO</th>
-                            <th style="padding: 8px; border: 1px solid #000; width: 25%;">OBSERVACIONES</th>
+                            <th style="padding: 8px; border: 1px solid #000; width: 15%;">OBSERVACIONES</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -358,6 +362,7 @@ const MovementHistoryScreen: React.FC<MovementHistoryScreenProps> = ({ onBack })
                             <tr>
                                 <td style="padding: 8px; border: 1px solid #000; text-align: center;">${item.cantidad}</td>
                                 <td style="padding: 8px; border: 1px solid #000;">${item.tool_nombre}</td>
+                                <td style="padding: 8px; border: 1px solid #000; text-align: center;">${item.tool_marca || 'N/A'}</td>
                                 <td style="padding: 8px; border: 1px solid #000; text-align: center;">${item.tool_codigo}</td>
                                 <td style="padding: 8px; border: 1px solid #000; text-align: center;">${item.tool_serial || 'N/R'}</td>
                                 <td style="padding: 8px; border: 1px solid #000; text-align: center;">${item.estado_insumo || 'OPERATIVO'}</td>
@@ -770,7 +775,9 @@ const MovementHistoryScreen: React.FC<MovementHistoryScreenProps> = ({ onBack })
                                 {selectedMovement?.items.map((it, idx) => (
                                     <View key={idx} style={styles.detailItemBox}>
                                         <Text style={styles.detailItemName}>{it.tool_nombre}</Text>
-                                        <Text style={styles.detailItemSub}>Cod: {it.tool_codigo} {it.tool_serial ? `| S/N: ${it.tool_serial}` : ''}</Text>
+                                        <Text style={styles.detailItemSub}>
+                                            Cod: {it.tool_codigo} {it.tool_serial ? `| S/N: ${it.tool_serial}` : ''} {it.tool_marca ? `| Marca: ${it.tool_marca}` : ''}
+                                        </Text>
                                         <Text style={styles.detailItemQty}>Cantidad: {it.cantidad}</Text>
                                     </View>
                                 ))}

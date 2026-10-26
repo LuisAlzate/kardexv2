@@ -111,7 +111,7 @@ export class SQLiteUserRepository implements IUserRepository {
 
             const screens = [
                 'dashboard', 'inventory_list', 'inventory_entry', 'inventory_exit',
-                'collaborators', 'locations', 'movement_history', 'user_management', 'business_lines'
+                'collaborators', 'locations', 'movement_history', 'user_management', 'business_lines', 'categories', 'reports'
             ];
 
             for (const screen of screens) {
@@ -252,7 +252,7 @@ export class SupabaseUserRepository implements IUserRepository {
 
         const screens = [
             'dashboard', 'inventory_list', 'inventory_entry', 'inventory_exit',
-            'collaborators', 'locations', 'movement_history', 'user_management', 'business_lines'
+            'collaborators', 'locations', 'movement_history', 'user_management', 'business_lines', 'categories', 'reports'
         ];
         
         for (const screen of screens) {

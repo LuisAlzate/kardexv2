@@ -12,9 +12,9 @@ import {
     ScrollView,
     Alert,
 } from 'react-native';
-import { ArrowLeft, Package, Search, X, Edit2, Save } from 'lucide-react-native';
+import { ArrowLeft, Package, Search, X, Edit2, Save, Tag, DollarSign, ChevronDown } from 'lucide-react-native';
 import { Colors } from '../theme/colors';
-import { getMovementRepository, ToolWithStock } from '../database/repositories/MovementRepository';
+import { getMovementRepository, ToolWithStock, Category } from '../database/repositories/MovementRepository';
 import { useAuth } from '../context/AuthContext';
 
 interface InventoryListScreenProps {
@@ -38,6 +38,10 @@ const InventoryListScreen: React.FC<InventoryListScreenProps> = ({ onBack }) => 
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearching, setIsSearching] = useState(false);
 
+    // Categories state & filter
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
+
     // Edit Modal State
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingTool, setEditingTool] = useState<ToolWithStock | null>(null);
@@ -47,6 +51,8 @@ const InventoryListScreen: React.FC<InventoryListScreenProps> = ({ onBack }) => 
     const [toolReference, setToolReference] = useState('');
     const [toolSerial, setToolSerial] = useState('');
     const [toolEstanteria, setToolEstanteria] = useState('');
+    const [toolCategoryId, setToolCategoryId] = useState('');
+    const [toolPrice, setToolPrice] = useState('');
     const [toolStockBueno, setToolStockBueno] = useState('');
     const [toolStockMalo, setToolStockMalo] = useState('');
     const [isSaving, setIsSaving] = useState(false);
@@ -56,26 +62,38 @@ const InventoryListScreen: React.FC<InventoryListScreenProps> = ({ onBack }) => 
     }, []);
 
     useEffect(() => {
-        if (!searchQuery) {
-            setFilteredTools(tools);
-        } else {
+        let filtered = tools;
+
+        // Filtro por categoría seleccionada
+        if (selectedCategoryFilter !== 'ALL') {
+            filtered = filtered.filter(t => t.categoria_id === selectedCategoryFilter);
+        }
+
+        // Filtro por término de búsqueda
+        if (searchQuery.trim()) {
             const lowerQuery = searchQuery.toLowerCase();
-            const filtered = tools.filter(
+            filtered = filtered.filter(
                 t => t.nombre.toLowerCase().includes(lowerQuery) ||
                     t.codigo_referencia.toLowerCase().includes(lowerQuery) ||
                     (t.num_serial && t.num_serial.toLowerCase().includes(lowerQuery)) ||
-                    (t.marca && t.marca.toLowerCase().includes(lowerQuery))
+                    (t.marca && t.marca.toLowerCase().includes(lowerQuery)) ||
+                    (t.categoria_nombre && t.categoria_nombre.toLowerCase().includes(lowerQuery))
             );
-            setFilteredTools(filtered);
         }
-    }, [searchQuery, tools]);
+
+        setFilteredTools(filtered);
+    }, [searchQuery, selectedCategoryFilter, tools]);
 
     const loadInventory = async () => {
         setLoading(true);
         try {
             const repo = await getMovementRepository(isOnline);
-            const data = await repo.getToolsWithStock();
+            const [data, cats] = await Promise.all([
+                repo.getToolsWithStock(),
+                repo.getAllCategories()
+            ]);
             setTools(data);
+            setCategories(cats);
         } catch (error) {
             console.error(error);
         } finally {
@@ -91,6 +109,8 @@ const InventoryListScreen: React.FC<InventoryListScreenProps> = ({ onBack }) => 
         setToolReference(tool.codigo_referencia);
         setToolSerial(tool.num_serial || '');
         setToolEstanteria(tool.estanteria || '');
+        setToolCategoryId(tool.categoria_id || '');
+        setToolPrice(tool.precio ? String(tool.precio) : '');
         setToolStockBueno(String(tool.stock_bueno));
         setToolStockMalo(String(tool.stock_malo));
         setShowEditModal(true);
@@ -114,6 +134,8 @@ const InventoryListScreen: React.FC<InventoryListScreenProps> = ({ onBack }) => 
                     codigo_referencia: toolReference,
                     num_serial: toolSerial,
                     estanteria: toolEstanteria,
+                    categoria_id: toolCategoryId || undefined,
+                    precio: parseFloat(toolPrice) || 0,
                 });
 
                 // Handle Stock Adjustments
@@ -168,6 +190,23 @@ const InventoryListScreen: React.FC<InventoryListScreenProps> = ({ onBack }) => 
         <View style={styles.card}>
             <View style={styles.cardContent}>
                 <View style={styles.infoSection}>
+                    {/* Fila de Categoría y Precio */}
+                    <View style={styles.itemHeaderMeta}>
+                        <View style={styles.categoryPill}>
+                            <Tag size={11} color={Colors.primary} />
+                            <Text style={styles.categoryPillText}>
+                                {item.categoria_nombre || 'Herramienta'}
+                            </Text>
+                        </View>
+                        {item.precio && item.precio > 0 ? (
+                            <View style={styles.pricePill}>
+                                <Text style={styles.pricePillText}>
+                                    {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(item.precio)}
+                                </Text>
+                            </View>
+                        ) : null}
+                    </View>
+
                     <Text style={styles.toolName}>{item.nombre}</Text>
                     <Text style={styles.toolDetail}>Marca: {item.marca || 'N/A'}</Text>
                     {item.estanteria ? <Text style={styles.toolDetail}>Estante: {item.estanteria}</Text> : null}
@@ -240,6 +279,49 @@ const InventoryListScreen: React.FC<InventoryListScreenProps> = ({ onBack }) => 
                 )}
             </View>
 
+            {/* Barra de Filtros por Categoría */}
+            <View style={styles.categoryFiltersContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryFiltersScroll}>
+                    <TouchableOpacity
+                        style={[
+                            styles.categoryFilterChip,
+                            selectedCategoryFilter === 'ALL' && styles.categoryFilterChipActive
+                        ]}
+                        onPress={() => setSelectedCategoryFilter('ALL')}
+                    >
+                        <Text style={[
+                            styles.categoryFilterChipText,
+                            selectedCategoryFilter === 'ALL' && styles.categoryFilterChipTextActive
+                        ]}>
+                            Todos ({tools.length})
+                        </Text>
+                    </TouchableOpacity>
+
+                    {categories.map((cat) => {
+                        const count = tools.filter(t => t.categoria_id === cat.id).length;
+                        const isSelected = selectedCategoryFilter === cat.id;
+                        return (
+                            <TouchableOpacity
+                                key={cat.id}
+                                style={[
+                                    styles.categoryFilterChip,
+                                    isSelected && styles.categoryFilterChipActive
+                                ]}
+                                onPress={() => setSelectedCategoryFilter(cat.id)}
+                            >
+                                <Tag size={12} color={isSelected ? '#fff' : Colors.primary} style={{ marginRight: 5 }} />
+                                <Text style={[
+                                    styles.categoryFilterChipText,
+                                    isSelected && styles.categoryFilterChipTextActive
+                                ]}>
+                                    {cat.nombre} ({count})
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+            </View>
+
             {loading ? (
                 <View style={styles.center}>
                     <ActivityIndicator size="large" color={Colors.primary} />
@@ -310,6 +392,47 @@ const InventoryListScreen: React.FC<InventoryListScreenProps> = ({ onBack }) => 
                                 onChangeText={setToolEstanteria}
                                 placeholder="Ej: A-12"
                             />
+
+                            {/* Selector de Categoría en Edición */}
+                            <Text style={styles.inputLabel}>Categoría</Text>
+                            <View style={styles.categorySelectorRow}>
+                                {categories.map(cat => {
+                                    const isSelected = toolCategoryId === cat.id;
+                                    return (
+                                        <TouchableOpacity
+                                            key={cat.id}
+                                            style={[
+                                                styles.catChoiceChip,
+                                                isSelected && styles.catChoiceChipActive
+                                            ]}
+                                            onPress={() => setToolCategoryId(cat.id)}
+                                        >
+                                            <Tag size={12} color={isSelected ? '#fff' : Colors.primary} />
+                                            <Text style={[
+                                                styles.catChoiceChipText,
+                                                isSelected && styles.catChoiceChipTextActive
+                                            ]}>
+                                                {cat.nombre}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+
+                            {/* Campo de Precio en Edición */}
+                            <Text style={styles.inputLabel}>Precio / Valor Unitario (COP)</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={toolPrice}
+                                onChangeText={setToolPrice}
+                                placeholder="Ej: 45000"
+                                keyboardType="numeric"
+                            />
+                            {toolPrice && !isNaN(Number(toolPrice)) && (
+                                <Text style={styles.priceHelperText}>
+                                    Valor: {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(toolPrice))}
+                                </Text>
+                            )}
 
                             <Text style={styles.inputLabel}>Descripción</Text>
                             <TextInput
@@ -560,6 +683,109 @@ const styles = StyleSheet.create({
     },
     stockInputBox: {
         flex: 1,
+    },
+    categoryFiltersContainer: {
+        backgroundColor: '#FFF',
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.border,
+        paddingVertical: 10,
+    },
+    categoryFiltersScroll: {
+        paddingHorizontal: 20,
+        gap: 8,
+    },
+    categoryFilterChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        borderRadius: 20,
+        backgroundColor: '#F1F5F9',
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+    },
+    categoryFilterChipActive: {
+        backgroundColor: Colors.primary,
+        borderColor: Colors.primary,
+    },
+    categoryFilterChipText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#475569',
+    },
+    categoryFilterChipTextActive: {
+        color: '#FFF',
+        fontWeight: '700',
+    },
+    itemHeaderMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 6,
+    },
+    categoryPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(235, 100, 39, 0.1)',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 6,
+        gap: 4,
+    },
+    categoryPillText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: Colors.primary,
+        textTransform: 'uppercase',
+    },
+    pricePill: {
+        backgroundColor: '#ECFDF5',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#A7F3D0',
+    },
+    pricePillText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#059669',
+    },
+    categorySelectorRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 8,
+    },
+    catChoiceChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 10,
+        backgroundColor: '#F8FAFC',
+        borderWidth: 1,
+        borderColor: '#CBD5E1',
+        gap: 6,
+    },
+    catChoiceChipActive: {
+        backgroundColor: Colors.primary,
+        borderColor: Colors.primary,
+    },
+    catChoiceChipText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#475569',
+    },
+    catChoiceChipTextActive: {
+        color: '#FFF',
+    },
+    priceHelperText: {
+        fontSize: 12,
+        color: '#059669',
+        fontWeight: '600',
+        marginTop: 4,
     },
 });
 

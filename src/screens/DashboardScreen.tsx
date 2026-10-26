@@ -13,7 +13,10 @@ import {
     RefreshCw,
     Wrench,
     FileText,
-    Briefcase
+    Briefcase,
+    Tag,
+    PackageCheck,
+    BarChart3
 } from 'lucide-react-native';
 import { Colors } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
@@ -125,6 +128,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
                             onPress={() => onNavigate('inventory_return')}
                         />
                     )}
+                    {(can('inventory_entry', 'editar') || user?.rol === 'admin') && (
+                        <MenuButton
+                            title="Devolver Insumos"
+                            icon={PackageCheck}
+                            onPress={() => onNavigate('supply_return')}
+                        />
+                    )}
                     {can('inventory_list', 'ver') && (
                         <MenuButton
                             title="Ver Inventario"
@@ -165,6 +175,20 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
                             title="Líneas de Negocio"
                             icon={Briefcase}
                             onPress={() => onNavigate('business_lines')}
+                        />
+                    )}
+                    {(can('categories', 'ver') || user?.rol === 'admin') && (
+                        <MenuButton
+                            title="Categorías"
+                            icon={Tag}
+                            onPress={() => onNavigate('categories')}
+                        />
+                    )}
+                    {(can('reports', 'ver') || user?.rol === 'admin') && (
+                        <MenuButton
+                            title="Informes y Valorización"
+                            icon={BarChart3}
+                            onPress={() => onNavigate('reports')}
                         />
                     )}
                     {user?.rol === 'admin' && (

@@ -10,9 +10,9 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
 } from 'react-native';
-import { ArrowLeft, Save, Package, Tag, Info, Search, X, Shield, CheckSquare, Square, Calendar } from 'lucide-react-native';
+import { ArrowLeft, Save, Package, Tag, Info, Search, X, Shield, CheckSquare, Square, Calendar, DollarSign, ChevronDown } from 'lucide-react-native';
 import { Colors } from '../theme/colors';
-import { getMovementRepository, Tool } from '../database/repositories/MovementRepository';
+import { getMovementRepository, Tool, Category } from '../database/repositories/MovementRepository';
 import { useAuth } from '../context/AuthContext';
 import * as SQLite from 'expo-sqlite';
 import { Modal, FlatList, Platform } from 'react-native';
@@ -40,6 +40,11 @@ const InventoryEntryScreen: React.FC<InventoryEntryScreenProps> = ({ onBack }) =
   const [fechaCompra, setFechaCompra] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [estanteria, setEstanteria] = useState('');
+  // Categoría y Precio (Herramienta vs Insumo, Valor unitario)
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [precio, setPrecio] = useState<string>('');
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
 
   const generateUUID = () => {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -64,6 +69,26 @@ const InventoryEntryScreen: React.FC<InventoryEntryScreenProps> = ({ onBack }) =
     }
   }, [cantidad]);
 
+  // Cargar categorías disponibles al montar
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const loadCategories = async () => {
+    try {
+      const repo = await getMovementRepository(isOnline);
+      const cats = await repo.getAllCategories();
+      setCategories(cats);
+      if (cats.length > 0 && !selectedCategoryId) {
+        // Por defecto seleccionar Herramientas o la primera disponible
+        const defaultCat = cats.find(c => c.codigo.includes('HERRAMIENTA')) || cats[0];
+        setSelectedCategoryId(defaultCat.id);
+      }
+    } catch (error) {
+      console.error('Error al cargar categorías en ingreso:', error);
+    }
+  };
+
   useEffect(() => {
     if (codigo.length >= 2) {
       lookupTool();
@@ -84,6 +109,8 @@ const InventoryEntryScreen: React.FC<InventoryEntryScreenProps> = ({ onBack }) =
         setMarca(tool.marca || '');
         setDescripcion(tool.descripcion || '');
         setEstanteria(tool.estanteria || '');
+        if (tool.categoria_id) setSelectedCategoryId(tool.categoria_id);
+        if (tool.precio !== undefined && tool.precio !== null) setPrecio(String(tool.precio));
       } else {
         setExistingTool(null);
         setEstanteria('');
@@ -113,6 +140,8 @@ const InventoryEntryScreen: React.FC<InventoryEntryScreenProps> = ({ onBack }) =
     setMarca(tool.marca || '');
     setDescripcion(tool.descripcion || '');
     setEstanteria(tool.estanteria || '');
+    if (tool.categoria_id) setSelectedCategoryId(tool.categoria_id);
+    if (tool.precio !== undefined && tool.precio !== null) setPrecio(String(tool.precio));
     setExistingTool(tool);
     setShowToolPicker(false);
   };
@@ -163,6 +192,8 @@ const InventoryEntryScreen: React.FC<InventoryEntryScreenProps> = ({ onBack }) =
 
       const newMovements: any[] = [];
 
+      const numericPrecio = parseFloat(precio) || 0;
+
       if (hasSerial) {
         for (const serial of serials) {
           const trimmedSerial = serial.trim();
@@ -179,7 +210,9 @@ const InventoryEntryScreen: React.FC<InventoryEntryScreenProps> = ({ onBack }) =
               codigo_referencia: codigo,
               num_serial: trimmedSerial,
               fecha_compra: fechaCompra.toISOString().split('T')[0],
-              estanteria: estanteria || undefined
+              estanteria: estanteria || undefined,
+              categoria_id: selectedCategoryId || undefined,
+              precio: numericPrecio
             });
           }
 
@@ -205,7 +238,9 @@ const InventoryEntryScreen: React.FC<InventoryEntryScreenProps> = ({ onBack }) =
             descripcion: descripcion || undefined,
             codigo_referencia: codigo,
             fecha_compra: fechaCompra.toISOString().split('T')[0],
-            estanteria: estanteria || undefined
+            estanteria: estanteria || undefined,
+            categoria_id: selectedCategoryId || undefined,
+            precio: numericPrecio
           });
         }
 
@@ -278,16 +313,53 @@ const InventoryEntryScreen: React.FC<InventoryEntryScreenProps> = ({ onBack }) =
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Nombre del Insumo *</Text>
+            <Text style={styles.label}>Nombre del Insumo / Herramienta *</Text>
             <View style={[styles.inputContainer, existingTool && styles.inputDisabled]}>
               <Package size={20} color={Colors.textSecondary} style={styles.icon} />
               <TextInput
                 style={styles.input}
                 value={nombre}
                 onChangeText={setNombre}
-                placeholder="Ej. Martillo de bola"
+                placeholder="Ej. Martillo, Tubo PVC, Broca"
                 editable={!existingTool}
               />
+            </View>
+          </View>
+
+          {/* Selector de Categoría (Maestro: Herramienta, Insumo, etc.) */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Categoría del Artículo *</Text>
+            <TouchableOpacity
+              style={[styles.inputContainer, existingTool && styles.inputDisabled]}
+              onPress={() => !existingTool && setShowCategoryPicker(true)}
+              disabled={!!existingTool}
+            >
+              <Tag size={20} color={Colors.primary} style={styles.icon} />
+              <Text style={[styles.input, !selectedCategoryId && { color: Colors.textSecondary }]}>
+                {categories.find(c => c.id === selectedCategoryId)?.nombre || 'Seleccionar Categoría...'}
+              </Text>
+              <ChevronDown size={18} color={Colors.textSecondary} style={{ marginRight: 8 }} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Campo de Precio / Valor Unitario */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Precio / Valor Unitario (COP)</Text>
+            <View style={[styles.inputContainer, existingTool && styles.inputDisabled]}>
+              <DollarSign size={20} color={Colors.textSecondary} style={styles.icon} />
+              <TextInput
+                style={styles.input}
+                value={precio}
+                onChangeText={setPrecio}
+                placeholder="Ej. 45000"
+                keyboardType="numeric"
+                editable={!existingTool}
+              />
+              {precio && !isNaN(Number(precio)) && (
+                <Text style={styles.priceFormatted}>
+                  {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(precio))}
+                </Text>
+              )}
             </View>
           </View>
 
@@ -459,6 +531,60 @@ const InventoryEntryScreen: React.FC<InventoryEntryScreenProps> = ({ onBack }) =
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>No se encontraron insumos</Text>
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal para Seleccionar Categoría */}
+      <Modal visible={showCategoryPicker} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Tag size={20} color={Colors.primary} />
+                <Text style={styles.modalTitle}>Seleccionar Categoría</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowCategoryPicker(false)}>
+                <X size={24} color={Colors.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={categories}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => {
+                const isSelected = item.id === selectedCategoryId;
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.toolItem,
+                      isSelected && { backgroundColor: '#fff7ed', borderColor: Colors.primary, borderWidth: 1 }
+                    ]}
+                    onPress={() => {
+                      setSelectedCategoryId(item.id);
+                      setShowCategoryPicker(false);
+                    }}
+                  >
+                    <View style={[styles.toolItemIcon, isSelected && { backgroundColor: Colors.primary }]}>
+                      <Tag size={18} color={isSelected ? '#fff' : Colors.primary} />
+                    </View>
+                    <View style={styles.toolItemInfo}>
+                      <Text style={[styles.toolItemName, isSelected && { color: Colors.primary, fontWeight: 'bold' }]}>
+                        {item.nombre}
+                      </Text>
+                      <Text style={styles.toolItemCode}>
+                        {item.codigo} {item.descripcion ? `• ${item.descripcion}` : ''}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>No hay categorías disponibles.</Text>
                 </View>
               }
             />
@@ -788,6 +914,16 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     marginLeft: 10,
+  },
+  priceFormatted: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
+    backgroundColor: '#ecfdf5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginLeft: 8,
   },
 });
 

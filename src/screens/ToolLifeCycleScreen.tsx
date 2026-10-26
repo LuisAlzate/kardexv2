@@ -43,7 +43,8 @@ const ToolLifeCycleScreen: React.FC<ToolLifeCycleScreenProps> = ({ onBack }) => 
         try {
             const repo = await getMovementRepository(isOnline);
             const data = await repo.getToolsWithStock();
-            setTools(data);
+            // La hoja de vida aplica únicamente a HERRAMIENTAS (activos con serial/trazabilidad)
+            setTools(data.filter(t => t.categoria_codigo === 'HERRAMIENTAS' || !t.categoria_codigo));
         } catch (error) {
             console.error(error);
         }
@@ -97,16 +98,22 @@ const ToolLifeCycleScreen: React.FC<ToolLifeCycleScreenProps> = ({ onBack }) => 
                             <strong style="font-size: 16px;">${selectedTool.nombre}</strong>
                         </td>
                         <td style="border: 1px solid #ddd; padding: 12px; width: 50%;">
-                            <span style="color: #666; font-size: 10px; text-transform: uppercase;">ID / Referencia Interna</span><br/>
-                            <strong style="font-size: 16px;">${selectedTool.codigo_referencia}</strong>
+                            <span style="color: #666; font-size: 10px; text-transform: uppercase;">Marca</span><br/>
+                            <strong style="font-size: 16px;">${selectedTool.marca || 'NO REGISTRA'}</strong>
                         </td>
                     </tr>
                     <tr>
                         <td style="border: 1px solid #ddd; padding: 12px;">
+                            <span style="color: #666; font-size: 10px; text-transform: uppercase;">ID / Referencia Interna</span><br/>
+                            <strong style="font-size: 16px;">${selectedTool.codigo_referencia}</strong>
+                        </td>
+                        <td style="border: 1px solid #ddd; padding: 12px;">
                             <span style="color: #666; font-size: 10px; text-transform: uppercase;">Número de Serial</span><br/>
                             <strong>${selectedTool.num_serial || 'NO REGISTRA'}</strong>
                         </td>
-                        <td style="border: 1px solid #ddd; padding: 12px;">
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="border: 1px solid #ddd; padding: 12px;">
                             <span style="color: #666; font-size: 10px; text-transform: uppercase;">Fecha de Emisión</span><br/>
                             <strong>${new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true })}</strong>
                         </td>

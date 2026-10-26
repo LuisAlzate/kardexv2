@@ -64,7 +64,24 @@ CREATE TABLE IF NOT EXISTS lineas_negocio (
 );
 
 -- ------------------------------------------------------------------------------
--- 6. Tabla: herramientas
+-- 5.1. Tabla: categorias (Maestro de Categorías: Herramientas, Insumos, Equipos)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS categorias (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  codigo TEXT NOT NULL UNIQUE,
+  nombre TEXT NOT NULL,
+  descripcion TEXT
+);
+
+-- Seed de categorías maestras por defecto
+INSERT INTO categorias (id, codigo, nombre, descripcion) VALUES
+  ('00000000-0000-0000-0000-000000000010', 'HERRAMIENTAS', 'Herramientas', 'Herramientas manuales, eléctricas y neumáticas'),
+  ('00000000-0000-0000-0000-000000000020', 'INSUMOS', 'Insumos', 'Materiales consumibles, repuestos y suministros'),
+  ('00000000-0000-0000-0000-000000000030', 'EQUIPOS', 'Equipos', 'Equipos de seguridad, medición y protección')
+ON CONFLICT (codigo) DO NOTHING;
+
+-- ------------------------------------------------------------------------------
+-- 6. Tabla: herramientas (Artículos e Insumos)
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS herramientas (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -75,8 +92,14 @@ CREATE TABLE IF NOT EXISTS herramientas (
   num_serial TEXT,
   fecha_compra DATE,
   estanteria TEXT,
+  categoria_id UUID REFERENCES categorias(id) ON DELETE SET NULL,
+  precio NUMERIC DEFAULT 0,
   UNIQUE(codigo_referencia, num_serial)
 );
+
+-- Migraciones para tablas existentes:
+ALTER TABLE herramientas ADD COLUMN IF NOT EXISTS categoria_id UUID REFERENCES categorias(id) ON DELETE SET NULL;
+ALTER TABLE herramientas ADD COLUMN IF NOT EXISTS precio NUMERIC DEFAULT 0;
 
 -- ------------------------------------------------------------------------------
 -- 7. Tabla: kardex_movimientos
@@ -135,4 +158,18 @@ VALUES
 ON CONFLICT (rol, pantalla) DO UPDATE 
 SET puede_ver = EXCLUDED.puede_ver, 
     puede_editar = EXCLUDED.puede_editar;
+
+-- Inyección de permisos para Categorías y Reportes de Valorización
+INSERT INTO rol_permisos (rol, pantalla, puede_ver, puede_editar) 
+VALUES 
+  ('admin', 'categories', true, true),
+  ('revisor', 'categories', true, false),
+  ('operario', 'categories', true, false),
+  ('admin', 'reports', true, true),
+  ('revisor', 'reports', true, false),
+  ('operario', 'reports', true, false)
+ON CONFLICT (rol, pantalla) DO UPDATE 
+SET puede_ver = EXCLUDED.puede_ver, 
+    puede_editar = EXCLUDED.puede_editar;
+
 

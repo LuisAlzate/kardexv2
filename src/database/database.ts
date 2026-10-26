@@ -66,6 +66,14 @@ export const initDatabase = async () => {
       nombre TEXT NOT NULL
     );
 
+    -- Tabla de Categorías (Maestro: Herramientas, Insumos, Equipos, etc.)
+    CREATE TABLE IF NOT EXISTS categorias (
+      id TEXT PRIMARY KEY NOT NULL,
+      codigo TEXT NOT NULL UNIQUE,
+      nombre TEXT NOT NULL,
+      descripcion TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS herramientas (
       id TEXT PRIMARY KEY NOT NULL,
       nombre TEXT NOT NULL,
@@ -75,7 +83,10 @@ export const initDatabase = async () => {
       num_serial TEXT,
       fecha_compra TEXT,
       estanteria TEXT,
-      UNIQUE(codigo_referencia, num_serial)
+      categoria_id TEXT,
+      precio REAL DEFAULT 0,
+      UNIQUE(codigo_referencia, num_serial),
+      FOREIGN KEY (categoria_id) REFERENCES categorias (id)
     );
 
     CREATE TABLE IF NOT EXISTS kardex_movimientos (
@@ -109,6 +120,8 @@ export const initDatabase = async () => {
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p7', 'admin', 'movement_history', 1, 1),
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p8', 'admin', 'user_management', 1, 1),
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p25', 'admin', 'business_lines', 1, 1),
+    (REPLACE(hex(randomblob(4)), ' ', '') || '-p28', 'admin', 'categories', 1, 1),
+    (REPLACE(hex(randomblob(4)), ' ', '') || '-p31', 'admin', 'reports', 1, 1),
     -- Revisor
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p9', 'revisor', 'dashboard', 1, 0),
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p10', 'revisor', 'inventory_entry', 1, 0),
@@ -119,6 +132,8 @@ export const initDatabase = async () => {
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p15', 'revisor', 'movement_history', 1, 0),
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p16', 'revisor', 'user_management', 0, 0),
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p26', 'revisor', 'business_lines', 1, 0),
+    (REPLACE(hex(randomblob(4)), ' ', '') || '-p29', 'revisor', 'categories', 1, 0),
+    (REPLACE(hex(randomblob(4)), ' ', '') || '-p32', 'revisor', 'reports', 1, 0),
     -- Operario
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p17', 'operario', 'dashboard', 1, 0),
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p18', 'operario', 'inventory_entry', 1, 1),
@@ -128,7 +143,9 @@ export const initDatabase = async () => {
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p22', 'operario', 'locations', 1, 0),
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p23', 'operario', 'movement_history', 1, 0),
     (REPLACE(hex(randomblob(4)), ' ', '') || '-p24', 'operario', 'user_management', 0, 0),
-    (REPLACE(hex(randomblob(4)), ' ', '') || '-p27', 'operario', 'business_lines', 1, 0);
+    (REPLACE(hex(randomblob(4)), ' ', '') || '-p27', 'operario', 'business_lines', 1, 0),
+    (REPLACE(hex(randomblob(4)), ' ', '') || '-p30', 'operario', 'categories', 1, 0),
+    (REPLACE(hex(randomblob(4)), ' ', '') || '-p33', 'operario', 'reports', 1, 0);
 
     -- Seed initial admin user if not exists (password: admin123)
     INSERT OR IGNORE INTO usuarios_sistema (id, nombre, email, rol, password_hash)
@@ -137,9 +154,33 @@ export const initDatabase = async () => {
     -- Seed BODEGA location
     INSERT OR IGNORE INTO ubicaciones (id, nombre_obra, estado)
     VALUES ('00000000-0000-0000-0000-000000000002', 'BODEGA', 'Activo');
+
+    -- Seed Categorías maestras por defecto (Herramientas, Insumos, Equipos)
+    INSERT OR IGNORE INTO categorias (id, codigo, nombre, descripcion) VALUES
+    ('cat-1', 'HERRAMIENTAS', 'Herramientas', 'Herramientas manuales, eléctricas y neumáticas'),
+    ('cat-2', 'INSUMOS', 'Insumos', 'Materiales consumibles, repuestos y suministros'),
+    ('cat-3', 'EQUIPOS', 'Equipos', 'Equipos de seguridad, medición y protección');
   `);
 
-  // Migration: Ensure 'cantidad' column exists in kardex_movimientos
+  // Migración: Asegurar que tabla categorias exista en BD existentes
+  try {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS categorias (
+        id TEXT PRIMARY KEY NOT NULL,
+        codigo TEXT NOT NULL UNIQUE,
+        nombre TEXT NOT NULL,
+        descripcion TEXT
+      );
+      INSERT OR IGNORE INTO categorias (id, codigo, nombre, descripcion) VALUES
+      ('cat-1', 'HERRAMIENTAS', 'Herramientas', 'Herramientas manuales, eléctricas y neumáticas'),
+      ('cat-2', 'INSUMOS', 'Insumos', 'Materiales consumibles, repuestos y suministros'),
+      ('cat-3', 'EQUIPOS', 'Equipos', 'Equipos de seguridad, medición y protección');
+    `);
+  } catch (e) {
+    console.error('Error al migrar tabla categorias:', e);
+  }
+
+  // Migration: Ensure 'cantidad' and 'linea_negocio_id' column exist in kardex_movimientos
   try {
     const tableInfo = await db.getAllAsync<any>("PRAGMA table_info(kardex_movimientos)");
     const hasCantidad = tableInfo.some(col => col.name === 'cantidad');
@@ -153,7 +194,36 @@ export const initDatabase = async () => {
       console.log('Added linea_negocio_id column to kardex_movimientos');
     }
   } catch (e) {
-    console.error('Migration error (cantidad):', e);
+    console.error('Migration error (cantidad/linea_negocio):', e);
+  }
+
+  // Migración: Asegurar que existan categoria_id y precio en tabla herramientas
+  try {
+    const tableInfo = await db.getAllAsync<any>("PRAGMA table_info(herramientas)");
+    const hasCategoriaId = tableInfo.some(col => col.name === 'categoria_id');
+    if (!hasCategoriaId) {
+      await db.runAsync("ALTER TABLE herramientas ADD COLUMN categoria_id TEXT;");
+      console.log('Columna categoria_id agregada exitosamente a herramientas');
+    }
+    const hasPrecio = tableInfo.some(col => col.name === 'precio');
+    if (!hasPrecio) {
+      await db.runAsync("ALTER TABLE herramientas ADD COLUMN precio REAL DEFAULT 0;");
+      console.log('Columna precio agregada exitosamente a herramientas');
+    }
+  } catch (e) {
+    console.error('Error en migración de columnas categoria_id / precio:', e);
+  }
+
+  // Migración: Asegurar permisos para pantalla reports
+  try {
+    await db.execAsync(`
+      INSERT OR IGNORE INTO rol_permisos (id, rol, pantalla, puede_ver, puede_editar) VALUES
+      ('seed-perm-rep-admin', 'admin', 'reports', 1, 1),
+      ('seed-perm-rep-revisor', 'revisor', 'reports', 1, 0),
+      ('seed-perm-rep-operario', 'operario', 'reports', 1, 0);
+    `);
+  } catch (e) {
+    console.error('Error en migración de permisos reports:', e);
   }
 
   // These are now empty as we did a full reset. 
@@ -228,18 +298,18 @@ const seedDummyData = async (db: SQLite.SQLiteDatabase) => {
       ('loc-3', 'OBRA SUR - CIMENTACIÓN', 'Activo');
     `);
 
-    // 3. Herramientas (Tools)
-    // Mixed: some with serial, some without
+    // 3. Herramientas e Insumos (Tools & Supplies)
+    // Mixed: herramientas con serial, insumos por volumen, equipos
     await db.execAsync(`
-      INSERT OR IGNORE INTO herramientas (id, nombre, marca, descripcion, codigo_referencia, num_serial, fecha_compra) VALUES
-      ('tool-1', 'TALADRO PERCUTOR 1/2', 'DEWALT', 'Taladro industrial', 'DW-001', 'SN-1001', '2023-01-15'),
-      ('tool-2', 'TALADRO PERCUTOR 1/2', 'DEWALT', 'Taladro industrial', 'DW-001', 'SN-1002', '2023-01-15'),
-      ('tool-3', 'SIERRA CIRCULAR 7-1/4', 'BOSCH', 'Sierra para madera', 'BS-500', 'SN-2001', '2023-05-20'),
-      ('tool-4', 'MULTÍMETRO DIGITAL', 'FLUKE', 'Equipo de medición', 'FL-115', 'SN-9001', '2022-11-10'),
-      ('tool-5', 'CASCO DE SEGURIDAD BLANCO', '3M', 'Protección personal', 'CASCO-01', NULL, '2024-02-01'),
-      ('tool-6', 'GUANTES DE NITRILO (PAR)', 'ZUBIOLA', 'Protección manos', 'GUANTE-01', NULL, '2024-02-01'),
-      ('tool-7', 'GAFAS DE SEGURIDAD TRANSPARENTE', 'LIBUS', 'Protección visual', 'GAFA-01', NULL, '2024-02-01'),
-      ('tool-8', 'NIVEL DE BURBUJA 24"', 'STANLEY', 'Herramienta de nivelación', 'ST-42', NULL, '2023-08-15');
+      INSERT OR IGNORE INTO herramientas (id, nombre, marca, descripcion, codigo_referencia, num_serial, fecha_compra, categoria_id, precio) VALUES
+      ('tool-1', 'TALADRO PERCUTOR 1/2', 'DEWALT', 'Taladro industrial', 'DW-001', 'SN-1001', '2023-01-15', 'cat-1', 350000),
+      ('tool-2', 'TALADRO PERCUTOR 1/2', 'DEWALT', 'Taladro industrial', 'DW-001', 'SN-1002', '2023-01-15', 'cat-1', 350000),
+      ('tool-3', 'SIERRA CIRCULAR 7-1/4', 'BOSCH', 'Sierra para madera', 'BS-500', 'SN-2001', '2023-05-20', 'cat-1', 420000),
+      ('tool-4', 'MULTÍMETRO DIGITAL', 'FLUKE', 'Equipo de medición', 'FL-115', 'SN-9001', '2022-11-10', 'cat-3', 180000),
+      ('tool-5', 'CASCO DE SEGURIDAD BLANCO', '3M', 'Protección personal', 'CASCO-01', NULL, '2024-02-01', 'cat-3', 45000),
+      ('tool-6', 'GUANTES DE NITRILO (PAR)', 'ZUBIOLA', 'Protección manos', 'GUANTE-01', NULL, '2024-02-01', 'cat-2', 12000),
+      ('tool-7', 'GAFAS DE SEGURIDAD TRANSPARENTE', 'LIBUS', 'Protección visual', 'GAFA-01', NULL, '2024-02-01', 'cat-2', 18000),
+      ('tool-8', 'NIVEL DE BURBUJA 24"', 'STANLEY', 'Herramienta de nivelación', 'ST-42', NULL, '2023-08-15', 'cat-1', 65000);
     `);
 
     // 4. Kardex Movimientos (Initial Stock)

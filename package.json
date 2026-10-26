@@ -4,6 +4,7 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
+    "dev": "expo start --web",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
@@ -19,6 +20,7 @@
     "@supabase/supabase-js": "^2.99.3",
     "electron-serve": "^3.0.1",
     "expo": "~55.0.5",
+    "expo-asset": "~55.0.20",
     "expo-constants": "^55.0.7",
     "expo-document-picker": "~55.0.9",
     "expo-file-system": "~55.0.11",
